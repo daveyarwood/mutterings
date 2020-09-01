@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+for cmd in sox soxi; do
+  if ! which $cmd >/dev/null; then
+    echo "$cmd must be available on your PATH." >/dev/stderr
+    exit 1
+  fi
+done
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 AUDIO_FILES_DIR OUTPUT_FILE" >/dev/stderr
+  exit 1
+fi
+
+audio_dir="$1"
+output_file="$2"
+
+total_length_ms=60000
+muttering_length_ms=2000
+
+current_length_ms=0
+
+parts_dir="$(mktemp -d)"
+
+seq_number=1
+
+echo "Taking excerpts of audio files:"
+while [[ "$current_length_ms" -lt "$total_length_ms" ]]; do
+  echo -n '.'
+  audio_file="$(find "$audio_dir" | tail -n+2 | shuf -n1)"
+  file_length_ms="$(echo "$(soxi -D "$audio_file") * 1000" | bc)"
+  offset_ms="$(ruby -e "puts rand(0..$file_length_ms.ceil())")"
+
+  part_file="$(printf "$parts_dir/part-%03d.wav" "$seq_number")"
+
+  sox \
+    "$audio_file" \
+    "$part_file" \
+    trim \
+    "$(echo "$offset_ms / 1000" | bc -l)" \
+    "$(echo "$muttering_length_ms / 1000" | bc -l)"
+
+  _=$((current_length_ms+=muttering_length_ms))
+  _=$((seq_number++))
+done
+
+echo
+echo "Stitching them together..."
+
+# Now we need to resample all of the parts before we stitch them together. We'll
+# do that in this new directory.
+resampled_parts_dir="$(mktemp -d)"
+
+for f in $(ls "$parts_dir"); do
+  sox "$parts_dir/$f" -r 48000 "$resampled_parts_dir/$f"
+done
+
+sox $(find "$resampled_parts_dir" | tail -n+2) "$output_file"
+
+echo "Output: $output_file"

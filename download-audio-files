@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+if ! which youtube-dl >/dev/null; then
+  echo "youtube-dl must be available on your PATH." >/dev/stderr
+  exit 1
+fi
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 FILE_WITH_VIDEO_URLS OUTPUT_DIR" >/dev/stderr
+  exit 1
+fi
+
+video_urls="$1"
+output_dir="$2"
+
+mkdir -p "$output_dir"
+
+while read video_url; do
+  youtube-dl \
+    --extract-audio \
+    --audio-format wav \
+    --output "$output_dir/%(id)s-%(title)s.%(ext)s" \
+    "$video_url"
+done < "$video_urls"

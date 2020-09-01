@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+if [[ -z "$GOOGLE_API_KEY" ]]; then
+  echo "GOOGLE_API_KEY must be set." >/dev/stderr
+  exit 1
+fi
+
+for cmd in curl jo jq; do
+  if ! which $cmd >/dev/null; then
+    echo "$cmd must be available on your PATH." >/dev/stderr
+    exit 1
+  fi
+done
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 CHANNEL_ID" >/dev/stderr
+  exit 1
+fi
+
+channel_id="$1"
+
+api_base_url="https://www.googleapis.com/youtube"
+
+uploads_playlist_id="$(curl -s --fail \
+  "$(echo -n "$api_base_url/v3/channels"
+     echo -n "?part=contentDetails"
+     echo -n "&id=$channel_id"
+     echo -n "&key=$GOOGLE_API_KEY")" \
+  | jq -r '.items[0].contentDetails.relatedPlaylists.uploads')"
+
+if [[ -z "$uploads_playlist_id" ]]; then
+  echo "Unable to obtain uploads playlist ID." > /dev/stderr
+  exit 1
+fi
+
+results_per_page=50 # the max allowed by the API
+
+all_video_ids="$(mktemp)"
+
+while [[ -z "$results_remaining" ]] || [[ "$results_remaining" -gt 0 ]]; do
+  results="$(curl -s --fail \
+    "$(echo -n "$api_base_url/v3/playlistItems"
+       echo -n "?part=snippet"
+       echo -n "&playlistId=$uploads_playlist_id"
+       echo -n "&maxResults=$results_per_page"
+       echo -n "$(if [[ -n "$page_token" ]]; then
+                    echo -n "&pageToken=$page_token"
+                  fi)"
+       echo -n "&key=$GOOGLE_API_KEY")")"
+
+  video_ids="$(jq -r \
+                 '.items[].snippet.resourceId.videoId' \
+                 <(echo "$results"))"
+
+  page_token="$(jq -r \
+                  '.nextPageToken // ""' \
+                  <(echo "$results"))"
+
+  number_of_results="$(wc -l < <(echo "$video_ids"))"
+
+  echo "$video_ids" >> "$all_video_ids"
+
+  if [[ -z "$results_remaining" ]]; then
+    total_results="$(jq -r '.pageInfo.totalResults' <(echo "$results"))"
+    results_remaining="$total_results"
+  fi
+
+  _=$((results_remaining-=number_of_results))
+
+  echo \
+    "Collected $(wc -l < "$all_video_ids")/$total_results video IDs" \
+    >/dev/stderr
+done
+
+while read video_id; do
+  echo "https://www.youtube.com/watch?v=$video_id"
+done < "$all_video_ids"
