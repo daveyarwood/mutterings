@@ -7,7 +7,7 @@ if [[ -z "$GOOGLE_API_KEY" ]]; then
   exit 1
 fi
 
-for cmd in curl jo jq; do
+for cmd in curl jq; do
   if ! which $cmd >/dev/null; then
     echo "$cmd must be available on your PATH." >/dev/stderr
     exit 1
@@ -74,6 +74,6 @@ while [[ -z "$results_remaining" ]] || [[ "$results_remaining" -gt 0 ]]; do
     >/dev/stderr
 done
 
-while read video_id; do
+while IFS= read -r video_id; do
   echo "https://www.youtube.com/watch?v=$video_id"
 done < "$all_video_ids"

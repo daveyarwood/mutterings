@@ -2,8 +2,8 @@
 
 set -eo pipefail
 
-if ! which youtube-dl >/dev/null; then
-  echo "youtube-dl must be available on your PATH." >/dev/stderr
+if ! which yt-dlp >/dev/null; then
+  echo "yt-dlp must be available on your PATH." >/dev/stderr
   exit 1
 fi
 
@@ -17,8 +17,8 @@ output_dir="$2"
 
 mkdir -p "$output_dir"
 
-while read video_url; do
-  youtube-dl \
+while IFS= read -r video_url; do
+  yt-dlp \
     --extract-audio \
     --audio-format wav \
     --output "$output_dir/%(id)s-%(title)s.%(ext)s" \
