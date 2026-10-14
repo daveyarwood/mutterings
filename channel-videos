@@ -74,6 +74,6 @@ while [[ -z "$results_remaining" ]] || [[ "$results_remaining" -gt 0 ]]; do
     >/dev/stderr
 done
 
-while read video_id; do
+while IFS= read -r video_id; do
   echo "https://www.youtube.com/watch?v=$video_id"
 done < "$all_video_ids"

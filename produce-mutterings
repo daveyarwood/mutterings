@@ -55,10 +55,14 @@ echo "Stitching them together..."
 # this new directory.
 resampled_parts_dir="$(mktemp -d)"
 
-for f in $(ls "$parts_dir"); do
-  sox "$parts_dir/$f" -r 48000 -c 2 "$resampled_parts_dir/$f"
+shopt -s nullglob
+
+for f in "$parts_dir"/*.wav; do
+  sox "$f" -r 48000 -c 2 "$resampled_parts_dir/$(basename "$f")"
 done
 
-sox $(find "$resampled_parts_dir" | tail -n+2) "$output_file"
+resampled_parts=("$resampled_parts_dir"/*.wav)
+
+sox "${resampled_parts[@]}" "$output_file"
 
 echo "Output: $output_file"

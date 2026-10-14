@@ -17,7 +17,7 @@ output_dir="$2"
 
 mkdir -p "$output_dir"
 
-while read video_url; do
+while IFS= read -r video_url; do
   yt-dlp \
     --extract-audio \
     --audio-format wav \
