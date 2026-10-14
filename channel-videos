@@ -7,7 +7,7 @@ if [[ -z "$GOOGLE_API_KEY" ]]; then
   exit 1
 fi
 
-for cmd in curl jo jq; do
+for cmd in curl jq; do
   if ! which $cmd >/dev/null; then
     echo "$cmd must be available on your PATH." >/dev/stderr
     exit 1

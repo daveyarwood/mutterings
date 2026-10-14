@@ -29,9 +29,10 @@ seq_number=1
 echo "Taking excerpts of audio files:"
 while [[ "$current_length_ms" -lt "$total_length_ms" ]]; do
   echo -n '.'
-  audio_file="$(find "$audio_dir" | tail -n+2 | shuf -n1)"
-  file_length_ms="$(echo "$(soxi -D "$audio_file") * 1000" | bc)"
-  offset_ms="$(ruby -e "puts rand(0..$file_length_ms.ceil())")"
+  audio_file="$(find "$audio_dir" -type f | shuf -n1)"
+  file_length_ms="$(soxi -D "$audio_file" | awk '{printf "%d\n", $1 * 1000}')"
+  offset_ms="$(awk -v max="$file_length_ms" -v seed="$RANDOM" \
+    'BEGIN { srand(seed); printf "%d\n", int(rand() * max) }')"
 
   part_file="$(printf "$parts_dir/part-%03d.wav" "$seq_number")"
 
@@ -39,8 +40,8 @@ while [[ "$current_length_ms" -lt "$total_length_ms" ]]; do
     "$audio_file" \
     "$part_file" \
     trim \
-    "$(echo "$offset_ms / 1000" | bc -l)" \
-    "$(echo "$muttering_length_ms / 1000" | bc -l)"
+    "$(awk -v ms="$offset_ms" 'BEGIN { printf "%.3f\n", ms / 1000 }')" \
+    "$(awk -v ms="$muttering_length_ms" 'BEGIN { printf "%.3f\n", ms / 1000 }')"
 
   _=$((current_length_ms+=muttering_length_ms))
   _=$((seq_number++))
