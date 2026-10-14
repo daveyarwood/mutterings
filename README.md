@@ -50,7 +50,7 @@ The scripts are bash and call these tools:
 
 ## License
 
-Copyright © 2020 Dave Yarwood
+Copyright © 2020-2026 Dave Yarwood
 
 Distributed under the Eclipse Public License version 2.0.
 
