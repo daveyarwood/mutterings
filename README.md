@@ -9,7 +9,12 @@ bunch of YouTube videos, played back to back.
 The scripts are bash and call these tools:
 
 * [curl] and [jq], for collecting video URLs
-* [yt-dlp] plus [ffmpeg] to extract the audio, for downloading it
+* [yt-dlp] plus [ffmpeg] to extract the audio, for downloading it. Install
+  `yt-dlp` somewhere you can update it yourself, such as `uv tool install
+  yt-dlp` or a [release binary][yt-dlp-releases], not from a distro package.
+  YouTube changes often enough that a months-old `yt-dlp` starts failing with
+  `HTTP Error 403: Forbidden` until it is updated. A JavaScript runtime such as
+  `deno` or `node` on `PATH` is optional but recommended for full support.
 * [sox], including the `soxi` it ships with, for producing the output
 * `awk` and the GNU coreutils (`find`, `mktemp`, `shuf`), for the arithmetic and
   the temporary files
@@ -52,5 +57,6 @@ Distributed under the Eclipse Public License version 2.0.
 [curl]: https://curl.haxx.se/
 [jq]: https://jqlang.github.io/jq/
 [yt-dlp]: https://github.com/yt-dlp/yt-dlp
+[yt-dlp-releases]: https://github.com/yt-dlp/yt-dlp/releases
 [ffmpeg]: https://ffmpeg.org/
 [sox]: https://sox.sourceforge.net/
