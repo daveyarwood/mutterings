@@ -11,8 +11,8 @@ The scripts are bash and call these tools:
 * [curl] and [jq], for collecting video URLs
 * [yt-dlp] plus [ffmpeg] to extract the audio, for downloading it
 * [sox], including the `soxi` it ships with, for producing the output
-* `awk` and the coreutils (`find`, `mktemp`, `shuf`), for the arithmetic and the
-  temporary files
+* `awk` and the GNU coreutils (`find`, `mktemp`, `shuf`), for the arithmetic and
+  the temporary files
 
 ## Procedure
 
