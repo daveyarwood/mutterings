@@ -48,6 +48,32 @@ The scripts are bash and call these tools:
 
 * Run `produce-mutterings /tmp/audio-files /tmp/out.wav`
 
+## The app backend
+
+`server/` is the local backend behind the app: it resolves a channel, works out
+which excerpts to take, fetches only those, and hands back a WAV. It is Node
+with no dependencies, and it calls the same two external tools as the scripts,
+`yt-dlp` to fetch audio and `ffmpeg` to join it.
+
+```sh
+GOOGLE_API_KEY=... npm start   # listens on PORT, 5179 by default
+npm test                       # node --test, no dependencies
+```
+
+The API, all JSON except the download:
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/health` | Whether the API key is set, and the default lengths |
+| `GET /api/channels?q=` | Channel search results for the UI to offer |
+| `POST /api/channels/resolve` | `{ input }`: a URL, an ID, a handle, or a query, to one channel |
+| `POST /api/jobs` | `{ channel, totalLengthMs?, excerptLengthMs? }` to a job id |
+| `GET /api/jobs/:id` | Its status, phase, and progress, for polling |
+| `GET /api/jobs/:id/result.wav` | The finished file |
+
+`GOOGLE_API_KEY` is read server side from the environment and never sent to the
+browser.
+
 ## License
 
 Copyright © 2020-2026 Dave Yarwood
