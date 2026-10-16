@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS, planExcerpts } from "../server/plan.js";
+import {
+  DEFAULT_EXCERPT_LENGTH_MS,
+  DEFAULT_TOTAL_LENGTH_MS,
+  groupByVideo,
+  planExcerpts,
+} from "../server/plan.js";
 
 // A stand-in for Math.random, so a plan can be stated exactly.
 function seededRandom(seed) {
@@ -83,4 +88,22 @@ test("no usable source means no excerpts", () => {
 test("lengths have to be positive", () => {
   assert.throws(() => planExcerpts({ videos, totalLengthMs: 0 }), /positive/);
   assert.throws(() => planExcerpts({ videos, excerptLengthMs: -1 }), /positive/);
+});
+
+test("excerpts are grouped by video, in the order they were planned", () => {
+  const groups = groupByVideo([
+    { index: 0, videoId: "aaaaaaaaaaa", startMs: 1000, lengthMs: 2000 },
+    { index: 1, videoId: "bbbbbbbbbbb", startMs: 2000, lengthMs: 2000 },
+    { index: 2, videoId: "aaaaaaaaaaa", startMs: 5000, lengthMs: 2000 },
+  ]);
+  assert.deepEqual([...groups.keys()], ["aaaaaaaaaaa", "bbbbbbbbbbb"]);
+  assert.deepEqual(
+    groups.get("aaaaaaaaaaa").map((excerpt) => excerpt.index),
+    [0, 2],
+  );
+  assert.deepEqual(
+    groups.get("bbbbbbbbbbb").map((excerpt) => excerpt.index),
+    [1],
+  );
+  assert.deepEqual(groupByVideo([]).size, 0);
 });

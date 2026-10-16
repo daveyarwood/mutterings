@@ -48,6 +48,16 @@ The API, all JSON except the download:
 The pipeline asks yt-dlp for each excerpt by section, so a 60 second output
 downloads a few seconds of audio per video rather than the whole thing.
 
+## Testing
+
+`npm test` covers the parts whose output is deterministic: the excerpt planner,
+the job registry, and the HTTP surface handling real requests and real jobs.
+Nothing in it reaches the network or stands in for yt-dlp or ffmpeg.
+
+The parts that have to talk to YouTube are checked end to end by hand against
+the real binaries, and the runs are written up in the pull request. There is no
+fake server and no fake binary in the suite.
+
 > Disclaimer: The legality of this depends on what you are downloading. Don't
 > download anything the content creator might object to you downloading.
 
