@@ -1,7 +1,7 @@
 // Choosing the excerpts. Pure: durations in, a list of excerpts out, with all
 // randomness behind the `random` argument so a caller can make it reproducible.
 
-// The two numbers the old produce-mutterings script hardcoded.
+// The two numbers a job gets when the request names neither.
 export const DEFAULT_TOTAL_LENGTH_MS = 60000;
 export const DEFAULT_EXCERPT_LENGTH_MS = 2000;
 

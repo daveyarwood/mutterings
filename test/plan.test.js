@@ -17,7 +17,7 @@ const videos = [
   { videoId: "bbbbbbbbbbb", durationMs: 300000 },
 ];
 
-test("the defaults are the numbers the shell script hardcoded", () => {
+test("a job that names no lengths gets the defaults", () => {
   assert.equal(DEFAULT_TOTAL_LENGTH_MS, 60000);
   assert.equal(DEFAULT_EXCERPT_LENGTH_MS, 2000);
 });

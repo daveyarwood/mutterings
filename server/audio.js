@@ -1,5 +1,5 @@
 // Getting audio: yt-dlp for the excerpts, ffmpeg to make them uniform and to
-// join them. These are the same two tools the shell scripts already required.
+// join them.
 
 import { execFile } from "node:child_process";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
