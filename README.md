@@ -1,52 +1,65 @@
 # mutterings
 
-A set of scripts where the end goal is to produce a WAV file consisting of a
-bunch of randomly selected very brief (50-2000ms) excerpts of the audio of a
-bunch of YouTube videos, played back to back.
+A local Node backend that produces a WAV file: a bunch of randomly selected very
+brief excerpts, 50 to 2000 milliseconds each, of the audio of a bunch of YouTube
+videos, played back to back.
 
 ## Requirements
 
-The scripts are bash and call these tools:
+* [node] 20 or newer
+* [yt-dlp], for fetching the audio. Install `yt-dlp` somewhere you can update it
+  yourself, such as `uv tool install yt-dlp` or a [release binary][yt-dlp-releases],
+  not from a distro package. YouTube changes often enough that a months-old
+  `yt-dlp` starts failing with `HTTP Error 403: Forbidden` until it is updated. A
+  JavaScript runtime such as `deno` or `node` on `PATH` is optional but
+  recommended for full support.
+* [ffmpeg], for cutting the excerpts out and joining them
 
-* [curl] and [jq], for collecting video URLs
-* [yt-dlp] plus [ffmpeg] to extract the audio, for downloading it. Install
-  `yt-dlp` somewhere you can update it yourself, such as `uv tool install
-  yt-dlp` or a [release binary][yt-dlp-releases], not from a distro package.
-  YouTube changes often enough that a months-old `yt-dlp` starts failing with
-  `HTTP Error 403: Forbidden` until it is updated. A JavaScript runtime such as
-  `deno` or `node` on `PATH` is optional but recommended for full support.
-* [sox], including the `soxi` it ships with, for producing the output
-* `awk` and the GNU coreutils (`find`, `mktemp`, `shuf`), for the arithmetic and
-  the temporary files
+## Running it
 
-## Procedure
+```sh
+npm start   # listens on PORT, 5179 by default
+npm test    # node --test, no dependencies
+```
 
-### Collect a bunch of YouTube URLs into a file
+A job is handed the videos it draws from, each with its length, so the pipeline
+holds no API key and reaches nothing but the audio itself:
 
-* Obtain a Google API key with access to YouTube, and set the API key in the
-  environment variable `GOOGLE_API_KEY`.
+```json
+{
+  "videos": [{ "videoId": "dQw4w9WgXcQ", "durationMs": 212000 }],
+  "totalLengthMs": 60000,
+  "excerptLengthMs": 2000
+}
+```
 
-* Figure out the ID of the YouTube channel you want.
+Working a channel out and reading the lengths of its videos is a separate piece
+of work, filed as its own issue. Until it lands, the caller supplies the list.
 
-* Run `./channel-videos $channel_id > /tmp/video-urls`
+The API, all JSON except the download:
 
-### Download audio files
+| Route | What it does |
+| --- | --- |
+| `GET /api/health` | The default lengths |
+| `POST /api/jobs` | `{ videos, totalLengthMs?, excerptLengthMs? }` to a job id |
+| `GET /api/jobs/:id` | Its status, phase, and progress, for polling |
+| `GET /api/jobs/:id/result.wav` | The finished file |
+
+The pipeline asks yt-dlp for each excerpt by section, so a 60 second output
+downloads a few seconds of audio per video rather than the whole thing.
+
+## Testing
+
+`npm test` covers the parts whose output is deterministic: the excerpt planner,
+the job registry, and the HTTP surface handling real requests and real jobs.
+Nothing in it reaches the network or stands in for yt-dlp or ffmpeg.
+
+The parts that have to talk to YouTube are checked end to end by hand against
+the real binaries, and the runs are written up in the pull request. There is no
+fake server and no fake binary in the suite.
 
 > Disclaimer: The legality of this depends on what you are downloading. Don't
 > download anything the content creator might object to you downloading.
-
-* If the channel you chose has a bajillion videos, edit the file down to a more
-  sensible number of videos, otherwise you are going to blow through all of your
-  hard drive space with this next step.
-
-* Run `./download-audio-files /tmp/video-urls /tmp/audio-files`
-
-### Produce mutterings
-
-* If desired, tweak the `total_length_ms` and `muttering_length_ms` parameters
-  in the `produce-mutterings` script.
-
-* Run `produce-mutterings /tmp/audio-files /tmp/out.wav`
 
 ## License
 
@@ -54,9 +67,7 @@ Copyright © 2020-2026 Dave Yarwood
 
 Distributed under the Eclipse Public License version 2.0.
 
-[curl]: https://curl.haxx.se/
-[jq]: https://jqlang.github.io/jq/
+[node]: https://nodejs.org/
 [yt-dlp]: https://github.com/yt-dlp/yt-dlp
 [yt-dlp-releases]: https://github.com/yt-dlp/yt-dlp/releases
 [ffmpeg]: https://ffmpeg.org/
-[sox]: https://sox.sourceforge.net/
