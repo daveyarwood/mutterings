@@ -50,29 +50,38 @@ The scripts are bash and call these tools:
 
 ## The app backend
 
-`server/` is the local backend behind the app: it resolves a channel, works out
-which excerpts to take, fetches only those, and hands back a WAV. It is Node
-with no dependencies, and it calls the same two external tools as the scripts,
-`yt-dlp` to fetch audio and `ffmpeg` to join it.
+`server/` is the local backend behind the app: it works out which excerpts to
+take, fetches only those, and hands back a WAV. It is Node with no dependencies,
+and it calls the same two external tools as the scripts, `yt-dlp` to fetch audio
+and `ffmpeg` to join it.
+
+A job is handed the videos it draws from, each with its length, so the pipeline
+holds no API key and reaches nothing but the audio itself:
+
+```json
+{
+  "videos": [{ "videoId": "dQw4w9WgXcQ", "durationMs": 212000 }],
+  "totalLengthMs": 60000,
+  "excerptLengthMs": 2000
+}
+```
+
+Working a channel out and reading the lengths of its videos is a separate piece
+of work, filed as its own issue. Until it lands, the caller supplies the list.
 
 ```sh
-GOOGLE_API_KEY=... npm start   # listens on PORT, 5179 by default
-npm test                       # node --test, no dependencies
+npm start   # listens on PORT, 5179 by default
+npm test    # node --test, no dependencies
 ```
 
 The API, all JSON except the download:
 
 | Route | What it does |
 | --- | --- |
-| `GET /api/health` | Whether the API key is set, and the default lengths |
-| `GET /api/channels?q=` | Channel search results for the UI to offer |
-| `POST /api/channels/resolve` | `{ input }`: a URL, an ID, a handle, or a query, to one channel |
-| `POST /api/jobs` | `{ channel, totalLengthMs?, excerptLengthMs? }` to a job id |
+| `GET /api/health` | The default lengths |
+| `POST /api/jobs` | `{ videos, totalLengthMs?, excerptLengthMs? }` to a job id |
 | `GET /api/jobs/:id` | Its status, phase, and progress, for polling |
 | `GET /api/jobs/:id/result.wav` | The finished file |
-
-`GOOGLE_API_KEY` is read server side from the environment and never sent to the
-browser.
 
 ## License
 

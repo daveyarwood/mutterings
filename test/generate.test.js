@@ -7,45 +7,11 @@ import test from "node:test";
 import { startGeneration } from "../server/generate.js";
 import { JobStore } from "../server/jobs.js";
 
-const CHANNEL_ID = "UCaaaaaaaaaaaaaaaaaaaaaa";
-const VIDEO_IDS = ["aaaaaaaaaaa", "bbbbbbbbbbb"];
-
-// The YouTube API as the pipeline uses it: a channel, its uploads, and the
-// video lengths. Audio is never part of this conversation.
-function fakeApi() {
-  const requests = [];
-  const fetchImpl = async (url) => {
-    const { pathname } = new URL(url);
-    requests.push(pathname);
-    if (pathname.endsWith("/channels")) {
-      return {
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: CHANNEL_ID,
-              snippet: { title: "A Channel" },
-              contentDetails: { relatedPlaylists: { uploads: "UUaaaaaaaaaaaaaaaaaaaaaa" } },
-            },
-          ],
-        }),
-      };
-    }
-    if (pathname.endsWith("/playlistItems")) {
-      return {
-        ok: true,
-        json: async () => ({ items: VIDEO_IDS.map((id) => ({ contentDetails: { videoId: id } })) }),
-      };
-    }
-    return {
-      ok: true,
-      json: async () => ({
-        items: VIDEO_IDS.map((id) => ({ id, contentDetails: { duration: "PT10M" } })),
-      }),
-    };
-  };
-  return { fetchImpl, requests };
-}
+// The videos a job carries: two, both long enough to cut from.
+const VIDEOS = [
+  { videoId: "aaaaaaaaaaa", durationMs: 600000 },
+  { videoId: "bbbbbbbbbbb", durationMs: 300000 },
+];
 
 // Stands in for yt-dlp and ffmpeg: writes the file each call was asked for.
 function fakeBinaries(calls) {
@@ -80,33 +46,23 @@ function seededRandom(seed) {
   };
 }
 
-async function generate({ totalLengthMs = 6000, seed = 9, env = { GOOGLE_API_KEY: "test-key" } } = {}) {
+async function generate({ videos = VIDEOS, totalLengthMs = 6000, seed = 9 } = {}) {
   const store = new JobStore();
-  const job = store.create({
-    channel: { id: CHANNEL_ID },
-    params: { totalLengthMs, excerptLengthMs: 2000 },
-  });
+  const job = store.create({ videos, params: { totalLengthMs, excerptLengthMs: 2000 } });
   const calls = [];
-  const { fetchImpl, requests } = fakeApi();
   const jobsDir = await mkdtemp(path.join(os.tmpdir(), "mutterings-jobs-"));
 
   await startGeneration({
     job,
     store,
-    deps: {
-      env,
-      fetchImpl,
-      jobsDir,
-      random: seededRandom(seed),
-      exec: fakeBinaries(calls),
-    },
+    deps: { jobsDir, random: seededRandom(seed), exec: fakeBinaries(calls) },
   });
 
-  return { store, job, calls, requests };
+  return { store, job, calls };
 }
 
 test("a generation request runs to a wav, reporting progress as it goes", async () => {
-  const { store, job, calls, requests } = await generate();
+  const { store, job, calls } = await generate();
 
   assert.equal(job.status, "done");
   assert.equal(job.phase, "done");
@@ -114,14 +70,6 @@ test("a generation request runs to a wav, reporting progress as it goes", async 
   assert.equal(job.error, null);
   assert.equal(job.excerpts, 3);
   assert.equal(job.resultUrl, `/api/jobs/${job.id}/result.wav`);
-  assert.equal(job.channel.title, "A Channel");
-
-  // Durations came from the API, so choosing where to cut downloaded nothing.
-  assert.deepEqual(requests, [
-    "/youtube/v3/channels",
-    "/youtube/v3/playlistItems",
-    "/youtube/v3/videos",
-  ]);
 
   const wav = await readFile(job.resultPath);
   assert.equal(wav.toString(), "RIFF");
@@ -146,52 +94,9 @@ test("only the requested sections are fetched, one yt-dlp call per video", async
   assert.equal(new Set(sections).size, sections.length);
 });
 
-test("a missing API key fails the job without fetching anything", async () => {
-  const { job, calls } = await generate({ env: {} });
+test("videos too short to cut from fail with a reason the UI can show", async () => {
+  const { job, calls } = await generate({ videos: [{ videoId: "tooshort", durationMs: 500 }] });
   assert.equal(job.status, "failed");
-  assert.match(job.error, /GOOGLE_API_KEY/);
+  assert.match(job.error, /long enough/);
   assert.deepEqual(calls, []);
-});
-
-test("a channel with no videos fails with a reason the UI can show", async () => {
-  const store = new JobStore();
-  const job = store.create({
-    channel: { input: "an empty channel" },
-    params: { totalLengthMs: 2000, excerptLengthMs: 2000 },
-  });
-  const fetchImpl = async (url) => {
-    const { pathname } = new URL(url);
-    if (pathname.endsWith("/search")) {
-      return { ok: true, json: async () => ({ items: [{ id: { channelId: CHANNEL_ID } }] }) };
-    }
-    if (pathname.endsWith("/channels")) {
-      return {
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: CHANNEL_ID,
-              snippet: { title: "An Empty Channel" },
-              contentDetails: { relatedPlaylists: { uploads: "UUaaaaaaaaaaaaaaaaaaaaaa" } },
-            },
-          ],
-        }),
-      };
-    }
-    return { ok: true, json: async () => ({ items: [] }) };
-  };
-
-  await startGeneration({
-    job,
-    store,
-    deps: {
-      env: { GOOGLE_API_KEY: "test-key" },
-      fetchImpl,
-      jobsDir: await mkdtemp(path.join(os.tmpdir(), "mutterings-jobs-")),
-      exec: fakeBinaries([]),
-    },
-  });
-
-  assert.equal(job.status, "failed");
-  assert.match(job.error, /no videos to draw from/);
 });

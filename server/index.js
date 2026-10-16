@@ -1,10 +1,11 @@
 // The HTTP entry point: a small JSON API over the generation pipeline.
 //
-//   npm start                     listens on PORT (5179 by default)
-//   GOOGLE_API_KEY=... npm start  required for anything that talks to YouTube
+//   npm start   listens on PORT (5179 by default)
 //
-// The key is read from the environment and used server side only, so it is
-// never part of a response.
+// A job carries the videos it draws from, each with its length, so the pipeline
+// needs no API key and no network beyond the audio it fetches. Working out a
+// channel and reading its video lengths is a separate step, filed as its own
+// issue.
 
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -14,7 +15,6 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS } from "./plan.js";
 import { JobStore } from "./jobs.js";
 import { startGeneration } from "./generate.js";
-import { resolveChannel, searchChannels } from "./youtube.js";
 
 export const DEFAULT_PORT = 5179;
 const BODY_LIMIT = 64 * 1024;
@@ -26,8 +26,6 @@ const CORS = {
 };
 
 export function createApp({ store = new JobStore(), start = startGeneration, deps = {} } = {}) {
-  const env = deps.env ?? process.env;
-
   async function body(request) {
     const chunks = [];
     let size = 0;
@@ -46,9 +44,9 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
   }
 
   function startJob(input) {
-    const channel = channelFrom(input);
+    const videos = videosFrom(input);
     const params = paramsFrom(input);
-    const job = store.create({ channel, params });
+    const job = store.create({ videos, params });
     Promise.resolve()
       .then(() => start({ job, store, deps }))
       .catch((error) => store.fail(job.id, error));
@@ -83,25 +81,11 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
       if (route === "GET /api/health") {
         return send(response, 200, {
           ok: true,
-          apiKey: Boolean(env.GOOGLE_API_KEY),
           defaults: {
             totalLengthMs: DEFAULT_TOTAL_LENGTH_MS,
             excerptLengthMs: DEFAULT_EXCERPT_LENGTH_MS,
           },
         });
-      }
-
-      if (route === "GET /api/channels") {
-        const query = (url.searchParams.get("q") ?? "").trim();
-        if (!query) throw new HttpError(400, "Add a ?q= search query.");
-        const channels = await searchChannels(query, { env, fetchImpl: deps.fetchImpl });
-        return send(response, 200, { channels });
-      }
-
-      if (route === "POST /api/channels/resolve") {
-        const { input } = await body(request);
-        const channel = await resolveChannel(input, { env, fetchImpl: deps.fetchImpl });
-        return send(response, 200, { channel });
       }
 
       if (route === "POST /api/jobs") {
@@ -126,18 +110,22 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
   };
 }
 
-function channelFrom(input) {
-  const channel = input?.channel;
-  if (!channel || typeof channel !== "object") {
-    throw new HttpError(400, "Send a channel, either { id } or { input }.");
+// The videos a job draws from: an id and a length each. The length is what lets
+// the plan choose offsets without downloading anything.
+function videosFrom(input) {
+  const videos = input?.videos;
+  if (!Array.isArray(videos) || videos.length === 0) {
+    throw new HttpError(400, "Send a videos list of { videoId, durationMs }.");
   }
-  if (typeof channel.id === "string" && channel.id.trim()) {
-    return { id: channel.id.trim() };
-  }
-  if (typeof channel.input === "string" && channel.input.trim()) {
-    return { input: channel.input.trim() };
-  }
-  throw new HttpError(400, "The channel needs an id or an input to search for.");
+  return videos.map((video) => {
+    const videoId = typeof video?.videoId === "string" ? video.videoId.trim() : "";
+    const durationMs = video?.durationMs;
+    if (!videoId) throw new HttpError(400, "Every video needs a videoId.");
+    if (!Number.isInteger(durationMs) || durationMs <= 0) {
+      throw new HttpError(400, "Every video needs a positive whole durationMs.");
+    }
+    return { videoId, durationMs };
+  });
 }
 
 function paramsFrom(input) {
@@ -182,9 +170,6 @@ export function startServer({ port = Number(process.env.PORT ?? DEFAULT_PORT), h
   const server = http.createServer(createApp({ store, deps: { ...deps, log } }));
   server.listen(port, host, () => {
     log(`mutterings backend on http://${host}:${port}`);
-    if (!(deps.env ?? process.env).GOOGLE_API_KEY) {
-      log("GOOGLE_API_KEY is not set, so channel lookup will refuse.");
-    }
   });
   return server;
 }

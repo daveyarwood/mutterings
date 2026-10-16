@@ -14,13 +14,13 @@ export class JobStore {
     this.now = now;
   }
 
-  create({ channel, params }) {
+  create({ videos, params }) {
     const job = {
       id: randomUUID(),
       status: QUEUED,
       phase: "queued",
       progress: 0,
-      channel,
+      videos,
       params,
       excerpts: 0,
       error: null,
@@ -70,7 +70,7 @@ export class JobStore {
       status: job.status,
       phase: job.phase,
       progress: job.progress,
-      channel: job.channel,
+      videos: job.videos,
       params: job.params,
       excerpts: job.excerpts,
       error: job.error,
