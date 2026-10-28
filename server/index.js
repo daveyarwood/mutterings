@@ -64,7 +64,7 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
     response.writeHead(200, {
       ...CORS,
       "content-type": "audio/wav",
-      "content-disposition": `inline; filename="${job.id}.wav"`,
+      "content-disposition": `attachment; filename="${job.id}.wav"`,
     });
     createReadStream(job.resultPath).pipe(response);
   }
@@ -80,7 +80,7 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
       }
 
       if (route === "GET /") {
-        return sendHtml(response, renderPage());
+        return send(response, 200, renderPage(), "text/html; charset=utf-8");
       }
 
       if (route === "GET /api/health") {
@@ -152,24 +152,15 @@ function positiveInt(value, fallback, name) {
   return value;
 }
 
-const sendHtml = (response, html) => {
-  response.writeHead(200, {
-    ...CORS,
-    "content-type": "text/html; charset=utf-8",
-    "content-length": Buffer.byteLength(html),
-  });
-  response.end(html);
-};
-
-function send(response, status, payload) {
-  const text = JSON.stringify(payload);
+const send = (response, status, body, type = "application/json") => {
+  const text = typeof body === "string" ? body : JSON.stringify(body);
   response.writeHead(status, {
     ...CORS,
-    "content-type": "application/json",
+    "content-type": type,
     "content-length": Buffer.byteLength(text),
   });
   response.end(text);
-}
+};
 
 class HttpError extends Error {
   constructor(status, message) {
