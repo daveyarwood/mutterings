@@ -64,7 +64,7 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
     response.writeHead(200, {
       ...CORS,
       "content-type": "audio/wav",
-      "content-disposition": `attachment; filename="${job.id}.wav"`,
+      "content-disposition": `inline; filename="${job.id}.wav"`,
     });
     createReadStream(job.resultPath).pipe(response);
   }
