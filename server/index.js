@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS } from "./plan.js";
 import { JobStore } from "./jobs.js";
 import { startGeneration } from "./generate.js";
+import { renderPage } from "./page.js";
 
 export const DEFAULT_PORT = 5179;
 const BODY_LIMIT = 64 * 1024;
@@ -76,6 +77,10 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
       if (request.method === "OPTIONS") {
         response.writeHead(204, CORS);
         return response.end();
+      }
+
+      if (route === "GET /") {
+        return sendHtml(response, renderPage());
       }
 
       if (route === "GET /api/health") {
@@ -147,6 +152,15 @@ function positiveInt(value, fallback, name) {
   return value;
 }
 
+function sendHtml(response, html) {
+  response.writeHead(200, {
+    ...CORS,
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(html),
+  });
+  response.end(html);
+}
+
 function send(response, status, payload) {
   const text = JSON.stringify(payload);
   response.writeHead(status, {
@@ -164,7 +178,11 @@ class HttpError extends Error {
   }
 }
 
-export function startServer({ port = Number(process.env.PORT ?? DEFAULT_PORT), host = "127.0.0.1", deps = {} } = {}) {
+export function startServer({
+  port = Number(process.env.PORT ?? DEFAULT_PORT),
+  host = process.env.HOST ?? "127.0.0.1",
+  deps = {},
+} = {}) {
   const store = new JobStore();
   const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`);
   const server = http.createServer(createApp({ store, deps: { ...deps, log } }));
