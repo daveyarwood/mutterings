@@ -36,14 +36,17 @@ holds no API key and reaches nothing but the audio itself:
 Working a channel out and reading the lengths of its videos is a separate piece
 of work, filed as its own issue. Until it lands, the caller supplies the list.
 
-The API, all JSON except the download:
+The routes:
 
 | Route | What it does |
 | --- | --- |
+| `GET /` | The one page: a videos list, a start button, the job's progress, the WAV |
 | `GET /api/health` | The default lengths |
 | `POST /api/jobs` | `{ videos, totalLengthMs?, excerptLengthMs? }` to a job id |
 | `GET /api/jobs/:id` | Its status, phase, and progress, for polling |
 | `GET /api/jobs/:id/result.wav` | The finished file |
+
+The API answers JSON, and the page and the download are the two exceptions.
 
 The pipeline asks yt-dlp for each excerpt by section, so a 60 second output
 downloads a few seconds of audio per video rather than the whole thing.
