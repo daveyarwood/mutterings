@@ -15,8 +15,20 @@ runs `server/index.js`, and `npm test` runs `node --test`.
 Railway, in the workspace `Dave Yarwood's Projects`
 (`d96028a4-62f8-4bd0-a635-4b05e462d4bc`), as the project `mutterings` with one
 service of the same name in the `production` environment, built from this repo's
-`Dockerfile`. `railway.json` names the build and the healthcheck, which is
+`Dockerfile`. `.railway/railway.ts` names the build and the healthcheck, which is
 `/api/health`.
+
+That file is Railway's Infrastructure as Code format, and it replaced
+`railway.json` on 2026-10-28, before Config as Code stops being read on
+2026-12-01. Railway refuses a plan while a service is still managed by
+`railway.json`, so the two files cannot sit together: the migration was a
+cutover, and `railway config migrate undo` reverses it. The settings now live on
+the service instance, `railway config plan` should report no changes, and
+`railway up` no longer supplies the builder or the healthcheck.
+
+Evaluating the file needs the TypeScript SDK, which this repo does not depend on.
+Run `npm install --no-save railway` in the checkout before `railway config plan`
+or `railway config apply`, and leave `package.json` and the lockfile alone.
 
 The image is `node:22-bookworm-slim` plus `ffmpeg` from Debian and the `yt-dlp`
 release binary fetched at build time, with its published checksum verified. Both
