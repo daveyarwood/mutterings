@@ -62,9 +62,6 @@ Tearing a preview down belongs to Exchequer's sweep, which deletes one whose pul
 request has merged or closed. A night never touches an environment other than the
 one it made.
 
-A night that finds no `mutterings` project reports that rather than inventing a
-workaround.
-
 ## Delivery
 
 Changes ship as pull requests from a `hermes/` branch, opened as a draft and left
