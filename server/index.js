@@ -152,14 +152,14 @@ function positiveInt(value, fallback, name) {
   return value;
 }
 
-function sendHtml(response, html) {
+const sendHtml = (response, html) => {
   response.writeHead(200, {
     ...CORS,
     "content-type": "text/html; charset=utf-8",
     "content-length": Buffer.byteLength(html),
   });
   response.end(html);
-}
+};
 
 function send(response, status, payload) {
   const text = JSON.stringify(payload);
