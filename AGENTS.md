@@ -17,9 +17,6 @@ read for the last time on 2026-12-01. Railway refuses a plan while a service is
 still managed by `railway.json`, so the two files cannot sit together: the
 migration was a cutover.
 
-How this project deploys is not recorded here. No workspace, no service, no
-token, no deploy command: that is Hermes's to know, and this repo is public.
-
 ## Delivery
 
 Changes ship as pull requests from a `hermes/` branch, opened as a draft and left
