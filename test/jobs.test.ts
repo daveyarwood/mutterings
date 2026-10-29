@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DONE, JobStore } from "../server/jobs.ts";
+import { JobStore } from "../server/jobs.ts";
 import type { Job, JobParams } from "../server/jobs.ts";
 import type { Video } from "../server/plan.ts";
 
@@ -53,7 +53,7 @@ test("a finished job reports the download url and not the path", () => {
   });
   const finished = held(store, job.id);
   const view = store.toView(finished);
-  assert.equal(view.status, DONE);
+  assert.equal(view.status, "done");
   assert.equal(view.progress, 1);
   assert.equal(view.excerpts, 30);
   assert.equal(view.resultUrl, "/api/jobs/abc/result.wav");

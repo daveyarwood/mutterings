@@ -4,12 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Video } from "./plan.ts";
 
-export const QUEUED = "queued";
-export const RUNNING = "running";
-export const DONE = "done";
-export const FAILED = "failed";
-
-export type Status = typeof QUEUED | typeof RUNNING | typeof DONE | typeof FAILED;
+export type Status = "queued" | "running" | "done" | "failed";
 
 // The lengths a job runs to. The API fills in the defaults.
 export type JobParams = { totalLengthMs: number; excerptLengthMs: number };
@@ -43,7 +38,7 @@ export class JobStore {
   create({ videos, params }: { videos: Video[]; params: JobParams }): Job {
     const job: Job = {
       id: randomUUID(),
-      status: QUEUED,
+      status: "queued",
       phase: "queued",
       progress: 0,
       videos,
@@ -72,7 +67,7 @@ export class JobStore {
 
   fail(id: string, error: unknown): Job | null {
     return this.update(id, {
-      status: FAILED,
+      status: "failed",
       phase: "failed",
       error: error instanceof Error ? error.message : String(error),
     });
@@ -87,7 +82,7 @@ export class JobStore {
     }: { resultPath: string; resultUrl: string; excerpts: number },
   ): Job | null {
     return this.update(id, {
-      status: DONE,
+      status: "done",
       phase: "done",
       progress: 1,
       resultPath,
