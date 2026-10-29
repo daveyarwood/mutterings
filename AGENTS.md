@@ -15,7 +15,7 @@ The build recipe is `.railway/railway.ts`, Railway's Infrastructure as Code
 file, which replaced `railway.json` on 2026-10-28 ahead of Config as Code being
 read for the last time on 2026-12-01. Railway refuses a plan while a service is
 still managed by `railway.json`, so the two files cannot sit together: the
-migration was a cutover, and `railway config migrate undo` reverses it.
+migration was a cutover.
 
 Deployment is Hermes's own business, not this repo's, so this file does not
 describe it: no Railway project, no service, no token, no deploy command.
