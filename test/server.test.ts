@@ -5,58 +5,64 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createApp } from "../server/index.js";
-import { JobStore } from "../server/jobs.js";
+import { createApp } from "../server/index.ts";
+import { JobStore } from "../server/jobs.ts";
+import type { JobView } from "../server/jobs.ts";
+import type { Video } from "../server/plan.ts";
 
-const VIDEOS = [{ videoId: "aaaaaaaaaaa", durationMs: 600000 }];
+const VIDEOS: Video[] = [{ videoId: "aaaaaaaaaaa", durationMs: 600000 }];
 
 // No excerpt fits inside these, so the pipeline settles them before it reaches
 // for anything on the network.
-const TOO_SHORT = [{ videoId: "tooshort1", durationMs: 500 }];
+const TOO_SHORT: Video[] = [{ videoId: "tooshort1", durationMs: 500 }];
 
 // A real server on a real port over the real app, with a work directory of its
 // own. The pipeline is the real one too.
-async function listen() {
+const listen = async () => {
   const store = new JobStore();
   const jobsDir = await mkdtemp(path.join(os.tmpdir(), "mutterings-jobs-"));
   const server = http.createServer(createApp({ store, deps: { jobsDir } }));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("the server has no port");
+  const base = `http://127.0.0.1:${address.port}`;
   return {
     store,
     close: () => new Promise((resolve) => server.close(resolve)),
-    get: (route) => fetch(`${base}${route}`),
-    post: (route, payload) =>
+    get: (route: string) => fetch(`${base}${route}`),
+    post: (route: string, payload: unknown) =>
       fetch(`${base}${route}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       }),
   };
-}
+};
+
+type App = Awaited<ReturnType<typeof listen>>;
 
 // Polls the job the way the UI will, until it settles.
-async function poll(app, jobId) {
+const poll = async (app: App, jobId: string): Promise<JobView> => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const job = await (await app.get(`/api/jobs/${jobId}`)).json();
     if (job.status === "done" || job.status === "failed") return job;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("the job never finished");
-}
+};
 
-async function startJob(app, videos) {
+const startJob = async (app: App, videos: Video[]): Promise<JobView> => {
   const started = await app.post("/api/jobs", { videos });
   assert.equal(started.status, 202);
   return started.json();
-}
+};
 
 test("the page is served at the root as HTML", async () => {
   const app = await listen();
   try {
     const response = await app.get("/");
     assert.equal(response.status, 200);
-    assert.match(response.headers.get("content-type"), /^text\/html/);
+    assert.match(response.headers.get("content-type") ?? "", /^text\/html/);
   } finally {
     await app.close();
   }
@@ -84,7 +90,7 @@ test("a job that cannot be planned reports the reason instead of hanging", async
 
     const failed = await poll(app, job.id);
     assert.equal(failed.status, "failed");
-    assert.match(failed.error, /long enough/);
+    assert.match(failed.error ?? "", /long enough/);
   } finally {
     await app.close();
   }

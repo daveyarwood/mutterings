@@ -5,19 +5,33 @@ import { execFile } from "node:child_process";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { groupByVideo } from "./plan.js";
+import { groupByVideo } from "./plan.ts";
+import type { Excerpt } from "./plan.ts";
 
 export const OUTPUT_SAMPLE_RATE = 48000;
 export const OUTPUT_CHANNELS = 2;
 
-function seconds(ms) {
-  return ms / 1000;
-}
+// Runs a binary and hands back what it wrote. The seam tests run the pipeline
+// through, so the real one is `run` below.
+export type Exec = (
+  bin: string,
+  args: string[],
+) => Promise<{ stdout: string; stderr: string }>;
+
+const seconds = (ms: number): number => ms / 1000;
 
 // One yt-dlp call per video, carrying every excerpt asked of it: the video's
 // metadata is fetched once rather than once per excerpt, and each section is
 // the only audio it downloads.
-export function ytDlpArgs({ videoId, excerpts, template }) {
+export const ytDlpArgs = ({
+  videoId,
+  excerpts,
+  template,
+}: {
+  videoId: string;
+  excerpts: Excerpt[];
+  template: string;
+}): string[] => {
   const sections = excerpts.flatMap((excerpt) => [
     "--download-sections",
     `*${seconds(excerpt.startMs)}-${seconds(excerpt.startMs + excerpt.lengthMs)}`,
@@ -36,10 +50,10 @@ export function ytDlpArgs({ videoId, excerpts, template }) {
     template,
     `https://www.youtube.com/watch?v=${videoId}`,
   ];
-}
+};
 
-function run(bin, args) {
-  return new Promise((resolve, reject) => {
+const run: Exec = (bin, args) =>
+  new Promise((resolve, reject) => {
     execFile(bin, args, { maxBuffer: 1 << 24 }, (error, stdout, stderr) => {
       if (error) {
         const detail = (stderr || "").trim().split("\n").slice(-3).join(" ").trim();
@@ -49,25 +63,30 @@ function run(bin, args) {
       }
     });
   });
-}
 
 // The files yt-dlp writes, matched back to the excerpts that asked for them.
 // The name carries the video id and the section start, which is what makes the
 // match possible without a guess.
-function excerptFile(names, excerpt) {
+const excerptFile = (names: string[], excerpt: Excerpt): string | null => {
   const prefix = `part-${excerpt.videoId}-${seconds(excerpt.startMs)}.`;
   return names.find((name) => name.startsWith(prefix) && name.endsWith(".wav")) ?? null;
-}
+};
 
-export async function fetchExcerpts({
+export const fetchExcerpts = async ({
   excerpts,
   dir,
   ytDlpBin = "yt-dlp",
   onProgress = () => {},
   exec = run,
-}) {
+}: {
+  excerpts: Excerpt[];
+  dir: string;
+  ytDlpBin?: string;
+  onProgress?: (done: number, total: number) => void;
+  exec?: Exec;
+}): Promise<string[]> => {
   await mkdir(dir, { recursive: true });
-  const parts = new Map();
+  const parts = new Map<number, string>();
   let done = 0;
 
   for (const [videoId, group] of groupByVideo(excerpts)) {
@@ -86,23 +105,32 @@ export async function fetchExcerpts({
     }
   }
 
-  return excerpts.map((excerpt) => parts.get(excerpt.index));
-}
+  // Every excerpt got a path in the loop above, and this puts them back in plan
+  // order.
+  return excerpts.map((excerpt) => parts.get(excerpt.index)!);
+};
 
 // ffmpeg takes one input format, so the excerpts are made uniform first and
 // then joined with a copy, which is the cheap half of the work.
-export async function assemble({
+export const assemble = async ({
   parts,
   outFile,
   workDir,
   ffmpegBin = "ffmpeg",
   onProgress = () => {},
   exec = run,
-}) {
+}: {
+  parts: string[];
+  outFile: string;
+  workDir: string;
+  ffmpegBin?: string;
+  onProgress?: (done: number, total: number) => void;
+  exec?: Exec;
+}): Promise<string> => {
   const uniformDir = path.join(workDir, "uniform");
   await mkdir(uniformDir, { recursive: true });
 
-  const uniform = [];
+  const uniform: string[] = [];
   for (const [index, part] of parts.entries()) {
     const target = path.join(uniformDir, `part-${String(index).padStart(4, "0")}.wav`);
     await exec(ffmpegBin, [
@@ -148,4 +176,4 @@ export async function assemble({
   ]);
 
   return outFile;
-}
+};

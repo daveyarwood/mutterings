@@ -2,20 +2,46 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { Video } from "./plan.ts";
+
 export const QUEUED = "queued";
 export const RUNNING = "running";
 export const DONE = "done";
 export const FAILED = "failed";
 
-export class JobStore {
-  #jobs = new Map();
+export type Status = typeof QUEUED | typeof RUNNING | typeof DONE | typeof FAILED;
 
-  constructor({ now = Date.now } = {}) {
+// The lengths a job runs to. The API fills in the defaults.
+export type JobParams = { totalLengthMs: number; excerptLengthMs: number };
+
+export type Job = {
+  id: string;
+  status: Status;
+  phase: string;
+  progress: number;
+  videos: Video[];
+  params: JobParams;
+  excerpts: number;
+  error: string | null;
+  resultPath: string | null;
+  resultUrl: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// What a client is told. The path on disk stays here.
+export type JobView = Omit<Job, "resultPath">;
+
+export class JobStore {
+  #jobs = new Map<string, Job>();
+  readonly now: () => number;
+
+  constructor({ now = Date.now }: { now?: () => number } = {}) {
     this.now = now;
   }
 
-  create({ videos, params }) {
-    const job = {
+  create({ videos, params }: { videos: Video[]; params: JobParams }): Job {
+    const job: Job = {
       id: randomUUID(),
       status: QUEUED,
       phase: "queued",
@@ -33,18 +59,18 @@ export class JobStore {
     return job;
   }
 
-  get(id) {
+  get(id: string): Job | null {
     return this.#jobs.get(id) ?? null;
   }
 
-  update(id, patch) {
+  update(id: string, patch: Partial<Job>): Job | null {
     const job = this.#jobs.get(id);
     if (!job) return null;
     Object.assign(job, patch, { updatedAt: this.now() });
     return job;
   }
 
-  fail(id, error) {
+  fail(id: string, error: unknown): Job | null {
     return this.update(id, {
       status: FAILED,
       phase: "failed",
@@ -52,7 +78,14 @@ export class JobStore {
     });
   }
 
-  finish(id, { resultPath, resultUrl, excerpts }) {
+  finish(
+    id: string,
+    {
+      resultPath,
+      resultUrl,
+      excerpts,
+    }: { resultPath: string; resultUrl: string; excerpts: number },
+  ): Job | null {
     return this.update(id, {
       status: DONE,
       phase: "done",
@@ -63,8 +96,7 @@ export class JobStore {
     });
   }
 
-  // What a client is told. The path on disk stays here.
-  toView(job) {
+  toView(job: Job): JobView {
     return {
       id: job.id,
       status: job.status,

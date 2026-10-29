@@ -6,7 +6,7 @@ videos, played back to back.
 
 ## Requirements
 
-* [node] 20 or newer
+* [node] 22.18 or newer
 * [yt-dlp], for fetching the audio. Install `yt-dlp` somewhere you can update it
   yourself, such as `uv tool install yt-dlp` or a [release binary][yt-dlp-releases],
   not from a distro package. YouTube changes often enough that a months-old
@@ -18,7 +18,7 @@ videos, played back to back.
 ## Running it
 
 ```sh
-npm start   # listens on PORT, 5179 by default
+npm start   # node server/index.ts, listens on PORT, 5179 by default
 npm test    # node --test, no dependencies
 ```
 

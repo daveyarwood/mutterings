@@ -3,7 +3,7 @@
 // styling, so the page is a string and the script inside it is inline. That
 // script is written without backticks, because the page itself is one.
 
-export const renderPage = () => `<!doctype html>
+export const renderPage = (): string => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">

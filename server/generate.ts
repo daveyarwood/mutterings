@@ -6,21 +6,40 @@ import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { assemble, fetchExcerpts } from "./audio.js";
-import { planExcerpts } from "./plan.js";
+import { assemble, fetchExcerpts } from "./audio.ts";
+import type { Exec } from "./audio.ts";
+import { planExcerpts } from "./plan.ts";
+import type { Job, JobStore } from "./jobs.ts";
 
 export const DEFAULT_JOBS_DIR = path.join(os.tmpdir(), "mutterings-jobs");
 
+// What a job needs to run: the binaries it shells out to, where the work lands,
+// and the two seams a test can stand in for. Every field has a default.
+export type GenerationDeps = {
+  ytDlpBin?: string;
+  ffmpegBin?: string;
+  jobsDir?: string;
+  random?: () => number;
+  exec?: Exec;
+  log?: (message: string) => void;
+};
+
+type Generation = { job: Job; store: JobStore; deps?: GenerationDeps };
+
 // Runs in the background, so a failure belongs on the job rather than in a
 // rejected promise nobody is watching.
-export function startGeneration({ job, store, deps = {} }) {
-  return runGeneration({ job, store, deps }).catch((error) => {
-    deps.log?.(`job ${job.id} failed: ${error.message}`);
+export const startGeneration = ({ job, store, deps = {} }: Generation): Promise<void> =>
+  runGeneration({ job, store, deps }).catch((error) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    deps.log?.(`job ${job.id} failed: ${reason}`);
     store.fail(job.id, error);
   });
-}
 
-export async function runGeneration({ job, store, deps = {} }) {
+export const runGeneration = async ({
+  job,
+  store,
+  deps = {},
+}: Generation): Promise<Job | null> => {
   const {
     ytDlpBin = "yt-dlp",
     ffmpegBin = "ffmpeg",
@@ -30,7 +49,7 @@ export async function runGeneration({ job, store, deps = {} }) {
     log = () => {},
   } = deps;
 
-  const report = (patch) => store.update(job.id, patch);
+  const report = (patch: Partial<Job>) => store.update(job.id, patch);
   const workDir = path.join(jobsDir, job.id);
   await mkdir(workDir, { recursive: true });
 
@@ -76,4 +95,4 @@ export async function runGeneration({ job, store, deps = {} }) {
     resultUrl: `/api/jobs/${job.id}/result.wav`,
     excerpts: excerpts.length,
   });
-}
+};

@@ -5,10 +5,11 @@ videos into one WAV. The README is the summary; this file is the part that
 reading the code cannot tell you: how it deploys and how a preview is stood up.
 
 No dependencies, no build step, and no lockfile, so the image is the source and
-`npm` is the entry point. The code is plain JavaScript ESM rather than
-TypeScript for the same reason: a build step is exactly what this repo does not
-have. `package.json` is the manifest: `engines.node` is 20 or newer, `npm start`
-runs `server/index.js`, and `npm test` runs `node --test`.
+`npm` is the entry point. The code is TypeScript, and Node strips the types as
+it runs them, so nothing compiles: an import carries the `.ts` extension and
+`npm start` points straight at `server/index.ts`. That is what `engines.node`
+asks for 22.18 or newer for, the version where type stripping stopped needing a
+flag.
 
 ## How it deploys
 
