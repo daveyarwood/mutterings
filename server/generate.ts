@@ -13,11 +13,9 @@ import type { Job, JobStore } from "./jobs.ts";
 
 export const DEFAULT_JOBS_DIR = path.join(os.tmpdir(), "mutterings-jobs");
 
-// What a job needs to run: the binaries it shells out to, where the work lands,
-// and the two seams a test can stand in for. Every field has a default.
+// What a job needs to run: where the work lands, and the two seams a test can
+// stand in for. Every field has a default.
 export type GenerationDeps = {
-  ytDlpBin?: string;
-  ffmpegBin?: string;
   jobsDir?: string;
   random?: () => number;
   exec?: Exec;
@@ -41,8 +39,6 @@ export const runGeneration = async ({
   deps = {},
 }: Generation): Promise<Job | null> => {
   const {
-    ytDlpBin = "yt-dlp",
-    ffmpegBin = "ffmpeg",
     jobsDir = DEFAULT_JOBS_DIR,
     random = Math.random,
     exec,
@@ -69,7 +65,6 @@ export const runGeneration = async ({
   const parts = await fetchExcerpts({
     excerpts,
     dir: workDir,
-    ytDlpBin,
     exec,
     onProgress: (done, total) =>
       report({
@@ -84,7 +79,6 @@ export const runGeneration = async ({
     parts,
     outFile,
     workDir,
-    ffmpegBin,
     exec,
     onProgress: (done, total) => report({ progress: 0.88 + 0.1 * (done / total) }),
   });

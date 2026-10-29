@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 
 import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS } from "./plan.ts";
 import type { Video } from "./plan.ts";
+import { missingBinaries } from "./audio.ts";
 import { JobStore } from "./jobs.ts";
 import type { Job, JobParams } from "./jobs.ts";
 import { startGeneration } from "./generate.ts";
@@ -197,6 +198,14 @@ export const startServer = ({
   host = process.env.HOST ?? "127.0.0.1",
   deps = {},
 }: { port?: number; host?: string; deps?: GenerationDeps } = {}): Server => {
+  // Both binaries are expected on the PATH, so a missing one is a broken image.
+  // Refusing to listen says so at deploy time rather than on the first job.
+  const missing = missingBinaries();
+  if (missing.length > 0) {
+    console.error(`Cannot start: ${missing.join(" and ")} not on the PATH.`);
+    process.exit(1);
+  }
+
   const store = new JobStore();
   const log = (message: string): void => console.log(`[${new Date().toISOString()}] ${message}`);
   const server = http.createServer(createApp({ store, deps: { ...deps, log } }));

@@ -2,6 +2,7 @@
 // join them.
 
 import { execFile } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +11,31 @@ import type { Excerpt } from "./plan.ts";
 
 export const OUTPUT_SAMPLE_RATE = 48000;
 export const OUTPUT_CHANNELS = 2;
+
+// The two binaries the pipeline shells out to, both expected on the PATH. The
+// image builds them there, so nothing here configures a path: see the Dockerfile.
+export const YT_DLP_BIN = "yt-dlp";
+export const FFMPEG_BIN = "ffmpeg";
+export const BINARIES = [YT_DLP_BIN, FFMPEG_BIN];
+
+// Which of the binaries are not on the PATH. The server checks this before it
+// listens, so an image missing one fails on boot rather than on the first job.
+// The PATH comes in as an argument, which is what makes the lookup testable.
+export const missingBinaries = (
+  pathValue: string = process.env.PATH ?? "",
+  binaries: string[] = BINARIES,
+): string[] => binaries.filter((bin) => !onPath(bin, pathValue));
+
+const onPath = (bin: string, pathValue: string): boolean =>
+  pathValue.split(path.delimiter).some((dir) => {
+    if (!dir) return false;
+    try {
+      accessSync(path.join(dir, bin), constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
 // Runs a binary and hands back what it wrote. The seam tests run the pipeline
 // through, so the real one is `run` below.
@@ -75,13 +101,11 @@ const excerptFile = (names: string[], excerpt: Excerpt): string | null => {
 export const fetchExcerpts = async ({
   excerpts,
   dir,
-  ytDlpBin = "yt-dlp",
   onProgress = () => {},
   exec = run,
 }: {
   excerpts: Excerpt[];
   dir: string;
-  ytDlpBin?: string;
   onProgress?: (done: number, total: number) => void;
   exec?: Exec;
 }): Promise<string[]> => {
@@ -91,7 +115,7 @@ export const fetchExcerpts = async ({
 
   for (const [videoId, group] of groupByVideo(excerpts)) {
     const template = path.join(dir, "part-%(id)s-%(section_start)s.%(ext)s");
-    await exec(ytDlpBin, ytDlpArgs({ videoId, excerpts: group, template }));
+    await exec(YT_DLP_BIN, ytDlpArgs({ videoId, excerpts: group, template }));
     const names = await readdir(dir);
     for (const excerpt of group) {
       const name = excerptFile(names, excerpt);
@@ -116,14 +140,12 @@ export const assemble = async ({
   parts,
   outFile,
   workDir,
-  ffmpegBin = "ffmpeg",
   onProgress = () => {},
   exec = run,
 }: {
   parts: string[];
   outFile: string;
   workDir: string;
-  ffmpegBin?: string;
   onProgress?: (done: number, total: number) => void;
   exec?: Exec;
 }): Promise<string> => {
@@ -133,7 +155,7 @@ export const assemble = async ({
   const uniform: string[] = [];
   for (const [index, part] of parts.entries()) {
     const target = path.join(uniformDir, `part-${String(index).padStart(4, "0")}.wav`);
-    await exec(ffmpegBin, [
+    await exec(FFMPEG_BIN, [
       "-hide_banner",
       "-loglevel",
       "error",
@@ -159,7 +181,7 @@ export const assemble = async ({
     "utf-8",
   );
 
-  await exec(ffmpegBin, [
+  await exec(FFMPEG_BIN, [
     "-hide_banner",
     "-loglevel",
     "error",
