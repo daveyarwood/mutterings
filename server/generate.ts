@@ -7,18 +7,16 @@ import os from "node:os";
 import path from "node:path";
 
 import { assemble, fetchExcerpts } from "./audio.ts";
-import type { Exec } from "./audio.ts";
 import { planExcerpts } from "./plan.ts";
 import type { Job, JobStore } from "./jobs.ts";
 
 export const DEFAULT_JOBS_DIR = path.join(os.tmpdir(), "mutterings-jobs");
 
-// What a job needs to run: where the work lands, and the two seams a test can
-// stand in for. Every field has a default.
+// What a job needs to run: where the work lands, and the seam a test can stand
+// in for. Every field has a default.
 export type GenerationDeps = {
   jobsDir?: string;
   random?: () => number;
-  exec?: Exec;
   log?: (message: string) => void;
 };
 
@@ -38,12 +36,7 @@ export const runGeneration = async ({
   store,
   deps = {},
 }: Generation): Promise<Job | null> => {
-  const {
-    jobsDir = DEFAULT_JOBS_DIR,
-    random = Math.random,
-    exec,
-    log = () => {},
-  } = deps;
+  const { jobsDir = DEFAULT_JOBS_DIR, random = Math.random, log = () => {} } = deps;
 
   const report = (patch: Partial<Job>) => store.update(job.id, patch);
   const workDir = path.join(jobsDir, job.id);
@@ -65,7 +58,6 @@ export const runGeneration = async ({
   const parts = await fetchExcerpts({
     excerpts,
     dir: workDir,
-    exec,
     onProgress: (done, total) =>
       report({
         phase: `fetching excerpts (${done}/${total})`,
@@ -79,7 +71,6 @@ export const runGeneration = async ({
     parts,
     outFile,
     workDir,
-    exec,
     onProgress: (done, total) => report({ progress: 0.88 + 0.1 * (done / total) }),
   });
 

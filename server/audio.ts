@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { groupByVideo } from "./plan.ts";
 import type { Excerpt } from "./plan.ts";
@@ -37,12 +38,7 @@ const onPath = (bin: string, pathValue: string): boolean =>
     }
   });
 
-// Runs a binary and hands back what it wrote. The seam tests run the pipeline
-// through, so the real one is `run` below.
-export type Exec = (
-  bin: string,
-  args: string[],
-) => Promise<{ stdout: string; stderr: string }>;
+const execFileAsync = promisify(execFile);
 
 const seconds = (ms: number): number => ms / 1000;
 
@@ -78,17 +74,19 @@ export const ytDlpArgs = ({
   ];
 };
 
-const run: Exec = (bin, args) =>
-  new Promise((resolve, reject) => {
-    execFile(bin, args, { maxBuffer: 1 << 24 }, (error, stdout, stderr) => {
-      if (error) {
-        const detail = (stderr || "").trim().split("\n").slice(-3).join(" ").trim();
-        reject(new Error(`${path.basename(bin)} failed: ${detail || error.message}`));
-      } else {
-        resolve({ stdout, stderr });
-      }
-    });
-  });
+// Runs a binary and hands back what it wrote. The promisified `execFile` is the
+// promise the standard library does not ship directly; what is added here is a
+// failure that names the binary and the last of its stderr.
+const run = (
+  bin: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> =>
+  execFileAsync(bin, args, { maxBuffer: 1 << 24 }).catch(
+    (error: Error & { stderr?: string }) => {
+      const detail = (error.stderr ?? "").trim().split("\n").slice(-3).join(" ").trim();
+      throw new Error(`${path.basename(bin)} failed: ${detail || error.message}`);
+    },
+  );
 
 // The files yt-dlp writes, matched back to the excerpts that asked for them.
 // The name carries the video id and the section start, which is what makes the
@@ -102,12 +100,10 @@ export const fetchExcerpts = async ({
   excerpts,
   dir,
   onProgress = () => {},
-  exec = run,
 }: {
   excerpts: Excerpt[];
   dir: string;
   onProgress?: (done: number, total: number) => void;
-  exec?: Exec;
 }): Promise<string[]> => {
   await mkdir(dir, { recursive: true });
   const parts = new Map<number, string>();
@@ -115,7 +111,7 @@ export const fetchExcerpts = async ({
 
   for (const [videoId, group] of groupByVideo(excerpts)) {
     const template = path.join(dir, "part-%(id)s-%(section_start)s.%(ext)s");
-    await exec(YT_DLP_BIN, ytDlpArgs({ videoId, excerpts: group, template }));
+    await run(YT_DLP_BIN, ytDlpArgs({ videoId, excerpts: group, template }));
     const names = await readdir(dir);
     for (const excerpt of group) {
       const name = excerptFile(names, excerpt);
@@ -141,13 +137,11 @@ export const assemble = async ({
   outFile,
   workDir,
   onProgress = () => {},
-  exec = run,
 }: {
   parts: string[];
   outFile: string;
   workDir: string;
   onProgress?: (done: number, total: number) => void;
-  exec?: Exec;
 }): Promise<string> => {
   const uniformDir = path.join(workDir, "uniform");
   await mkdir(uniformDir, { recursive: true });
@@ -155,7 +149,7 @@ export const assemble = async ({
   const uniform: string[] = [];
   for (const [index, part] of parts.entries()) {
     const target = path.join(uniformDir, `part-${String(index).padStart(4, "0")}.wav`);
-    await exec(FFMPEG_BIN, [
+    await run(FFMPEG_BIN, [
       "-hide_banner",
       "-loglevel",
       "error",
@@ -181,7 +175,7 @@ export const assemble = async ({
     "utf-8",
   );
 
-  await exec(FFMPEG_BIN, [
+  await run(FFMPEG_BIN, [
     "-hide_banner",
     "-loglevel",
     "error",
