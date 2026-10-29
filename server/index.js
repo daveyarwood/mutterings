@@ -164,7 +164,7 @@ class HttpError extends Error {
   }
 }
 
-export function startServer({ port = Number(process.env.PORT ?? DEFAULT_PORT), host = "127.0.0.1", deps = {} } = {}) {
+export function startServer({ port = Number(process.env.PORT ?? DEFAULT_PORT), host = process.env.HOST ?? "127.0.0.1", deps = {} } = {}) {
   const store = new JobStore();
   const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`);
   const server = http.createServer(createApp({ store, deps: { ...deps, log } }));
