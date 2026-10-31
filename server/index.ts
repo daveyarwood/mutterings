@@ -10,11 +10,17 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import http from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 
-import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS } from "./plan.js";
-import { JobStore } from "./jobs.js";
-import { startGeneration } from "./generate.js";
+import { DEFAULT_EXCERPT_LENGTH_MS, DEFAULT_TOTAL_LENGTH_MS } from "./plan.ts";
+import type { Video } from "./plan.ts";
+import { missingBinaries } from "./audio.ts";
+import { JobStore } from "./jobs.ts";
+import type { Job, JobParams } from "./jobs.ts";
+import { startGeneration } from "./generate.ts";
+import type { GenerationDeps } from "./generate.ts";
+import { renderPage } from "./page.ts";
 
 export const DEFAULT_PORT = 5179;
 const BODY_LIMIT = 64 * 1024;
@@ -25,9 +31,23 @@ const CORS = {
   "access-control-allow-headers": "content-type",
 };
 
-export function createApp({ store = new JobStore(), start = startGeneration, deps = {} } = {}) {
-  async function body(request) {
-    const chunks = [];
+// A request body, before anything in it is trusted. Each field is narrowed on
+// the way out.
+type JobRequest = { videos?: unknown; totalLengthMs?: unknown; excerptLengthMs?: unknown };
+
+export type AppOptions = {
+  store?: JobStore;
+  start?: (generation: { job: Job; store: JobStore; deps: GenerationDeps }) => unknown;
+  deps?: GenerationDeps;
+};
+
+export const createApp = ({
+  store = new JobStore(),
+  start = startGeneration,
+  deps = {},
+}: AppOptions = {}) => {
+  const body = async (request: IncomingMessage): Promise<unknown> => {
+    const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of request) {
       size += chunk.length;
@@ -41,20 +61,20 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
     } catch {
       throw new HttpError(400, "Request body is not valid JSON.");
     }
-  }
+  };
 
-  function startJob(input) {
+  const startJob = (input: unknown): Job => {
     const videos = videosFrom(input);
     const params = paramsFrom(input);
     const job = store.create({ videos, params });
     Promise.resolve()
       .then(() => start({ job, store, deps }))
-      .catch((error) => store.fail(job.id, error));
+      .catch((error: unknown) => store.fail(job.id, error));
     return job;
-  }
+  };
 
-  async function serveResult(response, job) {
-    if (!job?.resultPath) return send(response, 404, { error: "That job has no result." });
+  const serveResult = async (response: ServerResponse, job: Job): Promise<void> => {
+    if (!job.resultPath) return send(response, 404, { error: "That job has no result." });
     try {
       await stat(job.resultPath);
     } catch {
@@ -66,16 +86,20 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
       "content-disposition": `attachment; filename="${job.id}.wav"`,
     });
     createReadStream(job.resultPath).pipe(response);
-  }
+  };
 
-  return async function handle(request, response) {
-    const url = new URL(request.url, "http://localhost");
+  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const url = new URL(request.url ?? "/", "http://localhost");
     const route = `${request.method} ${url.pathname}`;
 
     try {
       if (request.method === "OPTIONS") {
         response.writeHead(204, CORS);
         return response.end();
+      }
+
+      if (route === "GET /") {
+        return send(response, 200, renderPage(), "text/html; charset=utf-8");
       }
 
       if (route === "GET /api/health") {
@@ -103,76 +127,93 @@ export function createApp({ store = new JobStore(), start = startGeneration, dep
 
       return send(response, 404, { error: `No route for ${route}.` });
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : 400;
-      if (status >= 500) deps.log?.(error.stack ?? String(error));
-      return send(response, status, { error: error.message });
+      const failure = error instanceof Error ? error : new Error(String(error));
+      const status = failure instanceof HttpError ? failure.status : 400;
+      if (status >= 500) deps.log?.(failure.stack ?? failure.message);
+      return send(response, status, { error: failure.message });
     }
   };
-}
+};
 
 // The videos a job draws from: an id and a length each. The length is what lets
 // the plan choose offsets without downloading anything.
-function videosFrom(input) {
-  const videos = input?.videos;
+const videosFrom = (input: unknown): Video[] => {
+  const { videos } = (input ?? {}) as JobRequest;
   if (!Array.isArray(videos) || videos.length === 0) {
     throw new HttpError(400, "Send a videos list of { videoId, durationMs }.");
   }
   return videos.map((video) => {
-    const videoId = typeof video?.videoId === "string" ? video.videoId.trim() : "";
-    const durationMs = video?.durationMs;
-    if (!videoId) throw new HttpError(400, "Every video needs a videoId.");
-    if (!Number.isInteger(durationMs) || durationMs <= 0) {
+    const { videoId, durationMs } = (video ?? {}) as { videoId?: unknown; durationMs?: unknown };
+    const id = typeof videoId === "string" ? videoId.trim() : "";
+    if (!id) throw new HttpError(400, "Every video needs a videoId.");
+    if (typeof durationMs !== "number" || !Number.isInteger(durationMs) || durationMs <= 0) {
       throw new HttpError(400, "Every video needs a positive whole durationMs.");
     }
-    return { videoId, durationMs };
+    return { videoId: id, durationMs };
   });
-}
+};
 
-function paramsFrom(input) {
+const paramsFrom = (input: unknown): JobParams => {
+  const { totalLengthMs, excerptLengthMs } = (input ?? {}) as JobRequest;
   return {
-    totalLengthMs: positiveInt(input?.totalLengthMs, DEFAULT_TOTAL_LENGTH_MS, "totalLengthMs"),
-    excerptLengthMs: positiveInt(
-      input?.excerptLengthMs,
-      DEFAULT_EXCERPT_LENGTH_MS,
-      "excerptLengthMs",
-    ),
+    totalLengthMs: positiveInt(totalLengthMs, DEFAULT_TOTAL_LENGTH_MS, "totalLengthMs"),
+    excerptLengthMs: positiveInt(excerptLengthMs, DEFAULT_EXCERPT_LENGTH_MS, "excerptLengthMs"),
   };
-}
+};
 
-function positiveInt(value, fallback, name) {
+const positiveInt = (value: unknown, fallback: number, name: string): number => {
   if (value === undefined || value === null) return fallback;
-  if (!Number.isInteger(value) || value <= 0) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     throw new HttpError(400, `${name} must be a positive whole number of milliseconds.`);
   }
   return value;
-}
+};
 
-function send(response, status, payload) {
-  const text = JSON.stringify(payload);
+const send = (
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+  type = "application/json",
+): void => {
+  const text = typeof body === "string" ? body : JSON.stringify(body);
   response.writeHead(status, {
     ...CORS,
-    "content-type": "application/json",
+    "content-type": type,
     "content-length": Buffer.byteLength(text),
   });
   response.end(text);
-}
+};
 
 class HttpError extends Error {
-  constructor(status, message) {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
 }
 
-export function startServer({ port = Number(process.env.PORT ?? DEFAULT_PORT), host = "127.0.0.1", deps = {} } = {}) {
+export const startServer = ({
+  port = Number(process.env.PORT ?? DEFAULT_PORT),
+  host = process.env.HOST ?? "127.0.0.1",
+  deps = {},
+}: { port?: number; host?: string; deps?: GenerationDeps } = {}): Server => {
+  // Both binaries are expected on the PATH, so a missing one is a broken image.
+  // Refusing to listen says so at deploy time rather than on the first job.
+  const missing = missingBinaries();
+  if (missing.length > 0) {
+    console.error(`Cannot start: ${missing.join(" and ")} not on the PATH.`);
+    process.exit(1);
+  }
+
   const store = new JobStore();
-  const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`);
+  const log = (message: string): void => console.log(`[${new Date().toISOString()}] ${message}`);
   const server = http.createServer(createApp({ store, deps: { ...deps, log } }));
   server.listen(port, host, () => {
     log(`mutterings backend on http://${host}:${port}`);
   });
   return server;
-}
+};
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer();

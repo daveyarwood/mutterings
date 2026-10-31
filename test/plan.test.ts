@@ -6,21 +6,25 @@ import {
   DEFAULT_TOTAL_LENGTH_MS,
   groupByVideo,
   planExcerpts,
-} from "../server/plan.js";
+} from "../server/plan.ts";
+import type { Excerpt, Video } from "../server/plan.ts";
 
 // A stand-in for Math.random, so a plan can be stated exactly.
-function seededRandom(seed) {
+const seededRandom = (seed: number): (() => number) => {
   let state = seed;
   return () => {
     state = (state * 1664525 + 1013904223) % 4294967296;
     return state / 4294967296;
   };
-}
+};
 
-const videos = [
+const videos: Video[] = [
   { videoId: "aaaaaaaaaaa", durationMs: 600000 },
   { videoId: "bbbbbbbbbbb", durationMs: 300000 },
 ];
+
+// The indices of a group, in the order they were planned.
+const indexes = (excerpts: Excerpt[]): number[] => excerpts.map((excerpt) => excerpt.index);
 
 test("a job that names no lengths gets the defaults", () => {
   assert.equal(DEFAULT_TOTAL_LENGTH_MS, 60000);
@@ -30,10 +34,7 @@ test("a job that names no lengths gets the defaults", () => {
 test("plans one excerpt per excerpt length until the total length is reached", () => {
   const excerpts = planExcerpts({ videos, random: seededRandom(1) });
   assert.equal(excerpts.length, DEFAULT_TOTAL_LENGTH_MS / DEFAULT_EXCERPT_LENGTH_MS);
-  assert.deepEqual(
-    excerpts.map((excerpt) => excerpt.index),
-    excerpts.map((_, index) => index),
-  );
+  assert.deepEqual(indexes(excerpts), excerpts.map((_, index) => index));
 });
 
 test("the same random sequence plans the same excerpts", () => {
@@ -46,13 +47,14 @@ test("every excerpt fits inside its video and starts on a whole second", () => {
   const excerpts = planExcerpts({ videos, totalLengthMs: 20000, random: seededRandom(42) });
   for (const excerpt of excerpts) {
     const video = videos.find((candidate) => candidate.videoId === excerpt.videoId);
+    assert.ok(video);
     assert.equal(excerpt.startMs % 1000, 0);
     assert.ok(excerpt.startMs + excerpt.lengthMs <= video.durationMs);
   }
 });
 
 test("two excerpts never ask one video for the same section", () => {
-  const single = [{ videoId: "aaaaaaaaaaa", durationMs: 40000 }];
+  const single: Video[] = [{ videoId: "aaaaaaaaaaa", durationMs: 40000 }];
   const excerpts = planExcerpts({ videos: single, totalLengthMs: 20000, random: seededRandom(3) });
   const starts = excerpts.map((excerpt) => excerpt.startMs);
   assert.equal(new Set(starts).size, starts.length);
@@ -97,13 +99,7 @@ test("excerpts are grouped by video, in the order they were planned", () => {
     { index: 2, videoId: "aaaaaaaaaaa", startMs: 5000, lengthMs: 2000 },
   ]);
   assert.deepEqual([...groups.keys()], ["aaaaaaaaaaa", "bbbbbbbbbbb"]);
-  assert.deepEqual(
-    groups.get("aaaaaaaaaaa").map((excerpt) => excerpt.index),
-    [0, 2],
-  );
-  assert.deepEqual(
-    groups.get("bbbbbbbbbbb").map((excerpt) => excerpt.index),
-    [1],
-  );
+  assert.deepEqual(indexes(groups.get("aaaaaaaaaaa") ?? []), [0, 2]);
+  assert.deepEqual(indexes(groups.get("bbbbbbbbbbb") ?? []), [1]);
   assert.deepEqual(groupByVideo([]).size, 0);
 });

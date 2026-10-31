@@ -6,10 +6,10 @@
   "license": "EPL-2.0",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "test": "node --test"
+    "start": "node server/index.ts",
+    "test": "node --test test/*.test.ts"
   }
 }

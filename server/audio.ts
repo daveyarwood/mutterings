@@ -2,22 +2,58 @@
 // join them.
 
 import { execFile } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
-import { groupByVideo } from "./plan.js";
+import { groupByVideo } from "./plan.ts";
+import type { Excerpt } from "./plan.ts";
 
 export const OUTPUT_SAMPLE_RATE = 48000;
 export const OUTPUT_CHANNELS = 2;
 
-function seconds(ms) {
-  return ms / 1000;
-}
+// The two binaries the pipeline shells out to, both expected on the PATH. The
+// image builds them there, so nothing here configures a path: see the Dockerfile.
+export const YT_DLP_BIN = "yt-dlp";
+export const FFMPEG_BIN = "ffmpeg";
+export const BINARIES = [YT_DLP_BIN, FFMPEG_BIN];
+
+// Which of the binaries are not on the PATH. The server checks this before it
+// listens, so an image missing one fails on boot rather than on the first job.
+// The PATH comes in as an argument, which is what makes the lookup testable.
+export const missingBinaries = (
+  pathValue: string = process.env.PATH ?? "",
+  binaries: string[] = BINARIES,
+): string[] => binaries.filter((bin) => !onPath(bin, pathValue));
+
+const onPath = (bin: string, pathValue: string): boolean =>
+  pathValue.split(path.delimiter).some((dir) => {
+    if (!dir) return false;
+    try {
+      accessSync(path.join(dir, bin), constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+const execFileAsync = promisify(execFile);
+
+const seconds = (ms: number): number => ms / 1000;
 
 // One yt-dlp call per video, carrying every excerpt asked of it: the video's
 // metadata is fetched once rather than once per excerpt, and each section is
 // the only audio it downloads.
-export function ytDlpArgs({ videoId, excerpts, template }) {
+export const ytDlpArgs = ({
+  videoId,
+  excerpts,
+  template,
+}: {
+  videoId: string;
+  excerpts: Excerpt[];
+  template: string;
+}): string[] => {
   const sections = excerpts.flatMap((excerpt) => [
     "--download-sections",
     `*${seconds(excerpt.startMs)}-${seconds(excerpt.startMs + excerpt.lengthMs)}`,
@@ -36,43 +72,46 @@ export function ytDlpArgs({ videoId, excerpts, template }) {
     template,
     `https://www.youtube.com/watch?v=${videoId}`,
   ];
-}
+};
 
-function run(bin, args) {
-  return new Promise((resolve, reject) => {
-    execFile(bin, args, { maxBuffer: 1 << 24 }, (error, stdout, stderr) => {
-      if (error) {
-        const detail = (stderr || "").trim().split("\n").slice(-3).join(" ").trim();
-        reject(new Error(`${path.basename(bin)} failed: ${detail || error.message}`));
-      } else {
-        resolve({ stdout, stderr });
-      }
-    });
-  });
-}
+// Runs a binary and hands back what it wrote. The promisified `execFile` is the
+// promise the standard library does not ship directly; what is added here is a
+// failure that names the binary and the last of its stderr.
+const run = (
+  bin: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> =>
+  execFileAsync(bin, args, { maxBuffer: 1 << 24 }).catch(
+    (error: Error & { stderr?: string }) => {
+      const detail = (error.stderr ?? "").trim().split("\n").slice(-3).join(" ").trim();
+      throw new Error(`${path.basename(bin)} failed: ${detail || error.message}`);
+    },
+  );
 
 // The files yt-dlp writes, matched back to the excerpts that asked for them.
 // The name carries the video id and the section start, which is what makes the
 // match possible without a guess.
-function excerptFile(names, excerpt) {
+const excerptFile = (names: string[], excerpt: Excerpt): string | null => {
   const prefix = `part-${excerpt.videoId}-${seconds(excerpt.startMs)}.`;
   return names.find((name) => name.startsWith(prefix) && name.endsWith(".wav")) ?? null;
-}
+};
 
-export async function fetchExcerpts({
+export const fetchExcerpts = async ({
   excerpts,
   dir,
-  ytDlpBin = "yt-dlp",
   onProgress = () => {},
-  exec = run,
-}) {
+}: {
+  excerpts: Excerpt[];
+  dir: string;
+  onProgress?: (done: number, total: number) => void;
+}): Promise<string[]> => {
   await mkdir(dir, { recursive: true });
-  const parts = new Map();
+  const parts = new Map<number, string>();
   let done = 0;
 
   for (const [videoId, group] of groupByVideo(excerpts)) {
     const template = path.join(dir, "part-%(id)s-%(section_start)s.%(ext)s");
-    await exec(ytDlpBin, ytDlpArgs({ videoId, excerpts: group, template }));
+    await run(YT_DLP_BIN, ytDlpArgs({ videoId, excerpts: group, template }));
     const names = await readdir(dir);
     for (const excerpt of group) {
       const name = excerptFile(names, excerpt);
@@ -86,26 +125,31 @@ export async function fetchExcerpts({
     }
   }
 
-  return excerpts.map((excerpt) => parts.get(excerpt.index));
-}
+  // Every excerpt got a path in the loop above, and this puts them back in plan
+  // order.
+  return excerpts.map((excerpt) => parts.get(excerpt.index)!);
+};
 
 // ffmpeg takes one input format, so the excerpts are made uniform first and
 // then joined with a copy, which is the cheap half of the work.
-export async function assemble({
+export const assemble = async ({
   parts,
   outFile,
   workDir,
-  ffmpegBin = "ffmpeg",
   onProgress = () => {},
-  exec = run,
-}) {
+}: {
+  parts: string[];
+  outFile: string;
+  workDir: string;
+  onProgress?: (done: number, total: number) => void;
+}): Promise<string> => {
   const uniformDir = path.join(workDir, "uniform");
   await mkdir(uniformDir, { recursive: true });
 
-  const uniform = [];
+  const uniform: string[] = [];
   for (const [index, part] of parts.entries()) {
     const target = path.join(uniformDir, `part-${String(index).padStart(4, "0")}.wav`);
-    await exec(ffmpegBin, [
+    await run(FFMPEG_BIN, [
       "-hide_banner",
       "-loglevel",
       "error",
@@ -131,7 +175,7 @@ export async function assemble({
     "utf-8",
   );
 
-  await exec(ffmpegBin, [
+  await run(FFMPEG_BIN, [
     "-hide_banner",
     "-loglevel",
     "error",
@@ -148,4 +192,4 @@ export async function assemble({
   ]);
 
   return outFile;
-}
+};
